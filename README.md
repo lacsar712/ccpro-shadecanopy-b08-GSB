@@ -47,9 +47,22 @@ docker compose down
 1. **Auth**：JWT `POST /api/auth/token/`，当前用户 `GET /api/auth/me/`
 2. **Greenhouse**：name / location / areaM2 / notes
 3. **Zone**：greenhouseId / zoneCode / cropName / status(`idle|growing|fallow`)；同温室 zoneCode 唯一
-4. **ClimateLog**：zoneId / recordedAt / tempC / humidityPct / parUmol / co2Ppm；**humidityPct ∈ [20, 100]**
+4. **ClimateLog**：zoneId / recordedAt / tempC / humidityPct / parUmol / co2Ppm；**humidityPct ∈ [20, 100]**；支持**作废**（见下节）
 5. **IrrigationCycle**：zoneId / startAt / durationMin / waterLiters / status(`scheduled|running|done|skipped`)
-6. **Dashboard**：温室数、growing 分区数、近 24h 气候日志数、今日 scheduled 轮灌数 → `GET /api/dashboard/`
+6. **Dashboard**：温室数、growing 分区数、近 24h 有效气候日志数、今日 scheduled 轮灌数 → `GET /api/dashboard/`
+
+## 气候记录作废
+
+作废是**软标记，不是物理删除**：作废行仍保留在库中，也不会因被其它逻辑引用而被级联删除。
+
+- `ClimateLog` 增加两个可空字段：`voidedAt`（作废时刻）与 `voidReason`（作废原因）。
+- `POST /api/climate-logs/{id}/void/`：请求体 `{"voidReason": "..."}`。作废原因去首尾空白后**至少 6 个字**，否则 400；服务端写入 `voidedAt`（当前时刻）与 `voidReason`。对已作废记录再次作废返回 **409**。
+- 默认列表 `GET /api/climate-logs/` **不含作废行**；加参数 `?includeVoided=true` 时返回全部行，作废行带 `voided: true`、`voidedAt`、`voidReason` 标记。`zoneId` 过滤可与上述参数组合。
+- 仪表盘「近 24h 气候日志」计数**排除作废行**（作废行的 `recorded_at` 即使落在近 24h 内也不计入）。
+- 作废统计 `GET /api/climate-logs/void-stats/` 返回：
+  - `validCount`：有效总数，与默认列表（同样的 `zoneId` 过滤）总数一致；
+  - `voidedCount`：已作废总数，与 `?includeVoided=true` 下列表中作废行数一致。
+- 气候页提供「作废」按钮（输入作废原因）、「包含已作废」开关与作废标记展示。
 
 ## API 一览
 
@@ -60,7 +73,9 @@ docker compose down
 | GET | `/api/auth/me/` |
 | CRUD | `/api/greenhouses/` |
 | CRUD | `/api/zones/?greenhouseId=&status=` |
-| CRUD | `/api/climate-logs/?zoneId=` |
+| CRUD | `/api/climate-logs/?zoneId=&includeVoided=` |
+| POST | `/api/climate-logs/{id}/void/` |
+| GET | `/api/climate-logs/void-stats/?zoneId=` |
 | CRUD | `/api/irrigation-cycles/?zoneId=&status=` |
 | GET | `/api/dashboard/` |
 

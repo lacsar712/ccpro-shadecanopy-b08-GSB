@@ -10,6 +10,7 @@
   --muted: #6b7268;
   --line: #d4c8b4;
   --danger: #a33b2b;
+  --warn: #b7791f;
   --card: rgba(255, 252, 247, 0.92);
   --shadow: 0 12px 32px rgba(44, 58, 36, 0.08);
   --radius: 14px;
@@ -271,6 +272,10 @@ textarea:focus {
 
 .btn.danger {
   background: var(--danger);
+}
+
+.btn.warn {
+  background: var(--warn);
 }
 
 .badge {

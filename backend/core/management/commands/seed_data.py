@@ -118,6 +118,26 @@ class Command(BaseCommand):
                     par_umol=Decimal("50.00"),
                     co2_ppm=Decimal("720.00"),
                 ),
+                # 可作废样例：一条正常有效记录，登录后可在气候页执行作废
+                ClimateLog(
+                    zone=z2,
+                    recorded_at=now - timedelta(hours=30),
+                    temp_c=Decimal("23.10"),
+                    humidity_pct=Decimal("69.00"),
+                    par_umol=Decimal("300.00"),
+                    co2_ppm=Decimal("610.00"),
+                ),
+                # 已作废样例：保留在库中（且落在近 24h 内），但默认列表与看板统计均不计入
+                ClimateLog(
+                    zone=z1,
+                    recorded_at=now - timedelta(hours=4),
+                    temp_c=Decimal("35.90"),
+                    humidity_pct=Decimal("55.00"),
+                    par_umol=Decimal("410.00"),
+                    co2_ppm=Decimal("640.00"),
+                    voided_at=now - timedelta(hours=3),
+                    void_reason="传感器离线读数异常，作废处理",
+                ),
             ]
         )
 

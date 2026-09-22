@@ -80,6 +80,9 @@ class ClimateLogSerializer(serializers.ModelSerializer):
     co2Ppm = serializers.DecimalField(
         source="co2_ppm", max_digits=8, decimal_places=2, required=False
     )
+    voided = serializers.SerializerMethodField()
+    voidedAt = serializers.DateTimeField(source="voided_at", read_only=True)
+    voidReason = serializers.CharField(source="void_reason", read_only=True)
     zoneCode = serializers.CharField(source="zone.zone_code", read_only=True)
     greenhouseName = serializers.CharField(
         source="zone.greenhouse.name", read_only=True
@@ -97,9 +100,23 @@ class ClimateLogSerializer(serializers.ModelSerializer):
             "humidityPct",
             "parUmol",
             "co2Ppm",
+            "voided",
+            "voidedAt",
+            "voidReason",
             "created_at",
         )
-        read_only_fields = ("id", "zoneCode", "greenhouseName", "created_at")
+        read_only_fields = (
+            "id",
+            "zoneCode",
+            "greenhouseName",
+            "voided",
+            "voidedAt",
+            "voidReason",
+            "created_at",
+        )
+
+    def get_voided(self, obj):
+        return obj.is_voided
 
     def validate_humidityPct(self, value):
         if value < 20 or value > 100:

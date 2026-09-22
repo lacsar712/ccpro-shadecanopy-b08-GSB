@@ -7,6 +7,8 @@ const zones = ref([])
 const error = ref('')
 const editingId = ref(null)
 const filterZoneId = ref('')
+const includeVoided = ref(false)
+const voidStats = ref({ voidedCount: 0, validCount: 0 })
 
 function localInputValue(d = new Date()) {
   const pad = (n) => String(n).padStart(2, '0')
@@ -43,10 +45,23 @@ async function load() {
   try {
     const params = {}
     if (filterZoneId.value) params.zoneId = filterZoneId.value
+    if (includeVoided.value) params.includeVoided = 'true'
     const { data } = await api.get('/climate-logs/', { params })
     list.value = data.results || data
+    await loadVoidStats()
   } catch {
     error.value = '加载气候日志失败'
+  }
+}
+
+async function loadVoidStats() {
+  try {
+    const params = {}
+    if (filterZoneId.value) params.zoneId = filterZoneId.value
+    const { data } = await api.get('/climate-logs/void-stats/', { params })
+    voidStats.value = data
+  } catch {
+    // 统计仅为辅助展示，失败不阻断列表
   }
 }
 
@@ -87,6 +102,27 @@ async function save() {
   }
 }
 
+async function voidRow(row) {
+  const reason = prompt(`作废第 ${row.id} 条气候记录，请输入作废原因（至少 6 个字）：`)
+  if (reason === null) return
+  if (reason.trim().length < 6) {
+    error.value = '作废原因去空白后至少 6 个字'
+    return
+  }
+  error.value = ''
+  try {
+    await api.post(`/climate-logs/${row.id}/void/`, { voidReason: reason.trim() })
+    await load()
+  } catch (e) {
+    if (e.response?.status === 409) {
+      error.value = e.response.data?.detail || '该记录已作废'
+    } else {
+      error.value = JSON.stringify(e.response?.data || '作废失败')
+    }
+    await load()
+  }
+}
+
 async function remove(id) {
   if (!confirm('确认删除该气候日志？')) return
   await api.delete(`/climate-logs/${id}/`)
@@ -104,9 +140,13 @@ onMounted(async () => {
     <div class="page-head">
       <div>
         <h1>气候日志</h1>
-        <p>记录温湿度、PAR、CO₂；湿度须 ∈ [20, 100]</p>
+        <p>记录温湿度、PAR、CO₂；湿度须 ∈ [20, 100]。已作废记录默认不进入列表与看板统计</p>
       </div>
       <div class="actions">
+        <label style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+          <input v-model="includeVoided" type="checkbox" @change="load" />
+          包含已作废
+        </label>
         <select v-model="filterZoneId" @change="load">
           <option value="">全部分区</option>
           <option v-for="z in zones" :key="z.id" :value="z.id">
@@ -115,6 +155,11 @@ onMounted(async () => {
         </select>
       </div>
     </div>
+
+    <p style="color:var(--muted);margin:0 0 12px">
+      有效记录 {{ voidStats.validCount }} 条 · 已作废 {{ voidStats.voidedCount }} 条
+      （有效数与默认列表一致，已作废数为全部作废行数）
+    </p>
 
     <div class="panel">
       <h3 style="margin-top:0">{{ editingId ? '编辑日志' : '新建日志' }}</h3>
@@ -150,20 +195,32 @@ onMounted(async () => {
             <th>湿度</th>
             <th>PAR</th>
             <th>CO₂</th>
+            <th>状态</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in list" :key="row.id">
+          <tr v-for="row in list" :key="row.id" :class="{ 'row-voided': row.voided }">
             <td>{{ new Date(row.recordedAt).toLocaleString() }}</td>
             <td>{{ row.greenhouseName }} / {{ row.zoneCode }}</td>
             <td>{{ row.tempC }}</td>
             <td>{{ row.humidityPct }}</td>
             <td>{{ row.parUmol }}</td>
             <td>{{ row.co2Ppm }}</td>
+            <td>
+              <span v-if="row.voided" class="badge-voided">
+                已作废 · {{ new Date(row.voidedAt).toLocaleString() }}
+                <template v-if="row.voidReason">（{{ row.voidReason }}）</template>
+              </span>
+              <span v-else class="badge-valid">有效</span>
+            </td>
             <td class="actions">
-              <button class="btn ghost" @click="edit(row)">编辑</button>
-              <button class="btn danger" @click="remove(row.id)">删除</button>
+              <template v-if="!row.voided">
+                <button class="btn ghost" @click="edit(row)">编辑</button>
+                <button class="btn warn" @click="voidRow(row)">作废</button>
+                <button class="btn danger" @click="remove(row.id)">删除</button>
+              </template>
+              <span v-else style="color:var(--muted)">—</span>
             </td>
           </tr>
         </tbody>
@@ -171,3 +228,17 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.row-voided {
+  opacity: 0.6;
+}
+.badge-voided {
+  color: #b04a3a;
+  font-size: 12px;
+}
+.badge-valid {
+  color: var(--leaf-deep, #3d6b3a);
+  font-size: 12px;
+}
+</style>

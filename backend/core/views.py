@@ -1,9 +1,11 @@
 from datetime import timedelta
 
 from django.db.models import Count
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -14,6 +16,8 @@ from .serializers import (
     IrrigationCycleSerializer,
     ZoneSerializer,
 )
+
+VOID_INCLUDE_PARAM_VALUES = {"1", "true", "yes"}
 
 
 class GreenhouseViewSet(viewsets.ModelViewSet):
@@ -38,12 +42,48 @@ class ZoneViewSet(viewsets.ModelViewSet):
 class ClimateLogViewSet(viewsets.ModelViewSet):
     serializer_class = ClimateLogSerializer
 
+    def _include_voided(self):
+        raw = self.request.query_params.get("includeVoided", "")
+        return str(raw).lower() in VOID_INCLUDE_PARAM_VALUES
+
     def get_queryset(self):
         qs = ClimateLog.objects.select_related("zone", "zone__greenhouse").all()
         zone_id = self.request.query_params.get("zoneId")
         if zone_id:
             qs = qs.filter(zone_id=zone_id)
+        if not self._include_voided():
+            qs = qs.filter(voided_at__isnull=True)
         return qs
+
+    @action(detail=True, methods=["post"], url_path="void")
+    def void_log(self, request, pk=None):
+        # 不走 get_queryset：默认列表已排除作废行，重复作废时仍需拿到该行返回 409
+        log = get_object_or_404(ClimateLog, pk=pk)
+        if log.is_voided:
+            return Response(
+                {"detail": "该气候记录已作废，不能重复作废"}, status=409
+            )
+        reason = (request.data.get("voidReason") or "").strip()
+        if len(reason) < 6:
+            raise ValidationError({"voidReason": "作废原因去空白后至少 6 个字"})
+        log.voided_at = timezone.now()
+        log.void_reason = reason
+        log.save(update_fields=["voided_at", "void_reason"])
+        return Response(ClimateLogSerializer(log).data)
+
+    @action(detail=False, methods=["get"], url_path="void-stats")
+    def void_stats(self, request):
+        # 与列表相同的过滤口径（如 zoneId），保证有效总数 == 默认列表总数
+        qs = ClimateLog.objects.all()
+        zone_id = request.query_params.get("zoneId")
+        if zone_id:
+            qs = qs.filter(zone_id=zone_id)
+        return Response(
+            {
+                "voidedCount": qs.exclude(voided_at__isnull=True).count(),
+                "validCount": qs.filter(voided_at__isnull=True).count(),
+            }
+        )
 
 
 class IrrigationCycleViewSet(viewsets.ModelViewSet):
@@ -72,7 +112,7 @@ def dashboard_stats(request):
         "greenhouseCount": Greenhouse.objects.count(),
         "growingZoneCount": Zone.objects.filter(status=Zone.STATUS_GROWING).count(),
         "climateLogLast24h": ClimateLog.objects.filter(
-            recorded_at__gte=since_24h
+            recorded_at__gte=since_24h, voided_at__isnull=True
         ).count(),
         "irrigationScheduledToday": IrrigationCycle.objects.filter(
             status=IrrigationCycle.STATUS_SCHEDULED,
