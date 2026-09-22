@@ -118,6 +118,17 @@ class Command(BaseCommand):
                     par_umol=Decimal("50.00"),
                     co2_ppm=Decimal("720.00"),
                 ),
+                # 已作废样例：行保留在库中，但不计入默认列表与看板统计。
+                ClimateLog(
+                    zone=z2,
+                    recorded_at=now - timedelta(hours=5),
+                    temp_c=Decimal("39.90"),
+                    humidity_pct=Decimal("55.00"),
+                    par_umol=Decimal("300.00"),
+                    co2_ppm=Decimal("610.00"),
+                    voided_at=now - timedelta(hours=4),
+                    void_reason="传感器读数明显异常，经现场复核作废",
+                ),
             ]
         )
 

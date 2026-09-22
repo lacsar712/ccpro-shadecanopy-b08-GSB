@@ -63,9 +63,15 @@ class ClimateLog(models.Model):
     par_umol = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     co2_ppm = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
+    void_reason = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["-recorded_at"]
+
+    @property
+    def is_voided(self):
+        return self.voided_at is not None
 
     def __str__(self):
         return f"Climate@{self.zone_id} {self.recorded_at}"
